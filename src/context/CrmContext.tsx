@@ -211,8 +211,16 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const checkDuplicateCustomer = (check: { mobile?: string; whatsapp?: string; email?: string; company?: string }) => {
     return (
       customers.find((c) => {
-        if (check.mobile && c.mobile && c.mobile.replace(/\D/g, '') === check.mobile.replace(/\D/g, '')) return true;
-        if (check.whatsapp && c.whatsapp && c.whatsapp.replace(/\D/g, '') === check.whatsapp.replace(/\D/g, '')) return true;
+        if (check.mobile && c.mobile) {
+          const m1 = check.mobile.replace(/\D/g, '');
+          const m2 = c.mobile.replace(/\D/g, '');
+          if (m1 && m2 && (m1 === m2 || m1.slice(-10) === m2.slice(-10))) return true;
+        }
+        if (check.whatsapp && c.whatsapp) {
+          const w1 = check.whatsapp.replace(/\D/g, '');
+          const w2 = c.whatsapp.replace(/\D/g, '');
+          if (w1 && w2 && (w1 === w2 || w1.slice(-10) === w2.slice(-10))) return true;
+        }
         if (check.email && c.email && c.email.toLowerCase().trim() === check.email.toLowerCase().trim()) return true;
         if (check.company && c.company && c.company.toLowerCase().trim() === check.company.toLowerCase().trim()) return true;
         return false;
@@ -411,32 +419,53 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addOrder = (ordData: Omit<Order, 'id' | 'orderNumber' | 'createdAt'>) => {
     const nextSeq = orders.length + 1;
-    const orderNumber = `${settings.orderPrefix}${String(nextSeq).padStart(4, '0')}`;
+    const prefix = settings.orderPrefix || 'VC-ORD-2026-';
+    const orderNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
     const newOrd: Order = {
       ...ordData,
-      id: `ord-${Date.now()}`,
+      id: `ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       orderNumber,
       createdAt: new Date().toISOString().split('T')[0],
     };
     setOrders((prev) => [newOrd, ...prev]);
 
+    // Update customer stats if customer exists
+    if (newOrd.customerId) {
+      setCustomers((prev) =>
+        prev.map((c) => {
+          if (c.id !== newOrd.customerId) return c;
+          const totalOrders = (c.totalOrders || 0) + 1;
+          const totalPurchaseValue = (c.totalPurchaseValue || 0) + (newOrd.totalValue || 0);
+          const outstandingAmount = (c.outstandingAmount || 0) + (newOrd.balanceAmount || 0);
+          return {
+            ...c,
+            totalOrders,
+            totalPurchaseValue,
+            outstandingAmount,
+            lifetimeValue: totalPurchaseValue,
+            lastOrderDate: newOrd.orderDate || new Date().toISOString().split('T')[0],
+          };
+        })
+      );
+    }
+
     // Auto add production records
-    for (const item of newOrd.items) {
-      const prodRecord: ProductionRecord = {
-        id: `prod-rec-${Date.now()}-${Math.random()}`,
+    if (newOrd.items && newOrd.items.length > 0) {
+      const prodRecords: ProductionRecord[] = newOrd.items.map((item, idx) => ({
+        id: `prod-rec-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
         orderId: newOrd.id,
         orderNumber: newOrd.orderNumber,
         productName: item.productName,
-        sku: item.sku,
-        requiredQty: item.quantity,
+        sku: item.sku || 'SKU-GEN',
+        requiredQty: item.quantity || 1,
         producedQty: 0,
         rejectedQty: 0,
-        balanceQty: item.quantity,
-        expectedCompletionDate: newOrd.requiredDeliveryDate,
+        balanceQty: item.quantity || 1,
+        expectedCompletionDate: newOrd.requiredDeliveryDate || new Date().toISOString().split('T')[0],
         status: 'Pending',
         controller: 'Studio Lead',
-      };
-      setProduction((prev) => [...prev, prodRecord]);
+      }));
+      setProduction((prev) => [...prodRecords, ...prev]);
     }
 
     return newOrd;
@@ -494,24 +523,33 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const receiptNumber = `VC-RCT-2026-${String(nextSeq).padStart(3, '0')}`;
     const newPayment: Payment = {
       ...paymentData,
-      id: `pay-${Date.now()}`,
+      id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       receiptNumber,
     };
     setPayments((prev) => [newPayment, ...prev]);
 
-    // Update order received & balance
+    // Update order received & balance safely with functional updater
     if (paymentData.orderId) {
-      const order = orders.find((o) => o.id === paymentData.orderId);
-      if (order) {
-        const totalPaid = (order.advanceReceived || 0) + paymentData.amount;
-        const balance = Math.max(0, order.totalValue - totalPaid);
-        const paymentStatus = balance <= 0 ? 'Paid' : 'Partially Paid';
-        updateOrder(order.id, {
-          advanceReceived: totalPaid,
-          balanceAmount: balance,
-          paymentStatus,
-        });
-      }
+      setOrders((prev) =>
+        prev.map((order) => {
+          if (order.id !== paymentData.orderId) return order;
+          // Avoid double counting if this was the initial advance payment already registered on the order
+          let totalPaid = order.advanceReceived;
+          if (order.advanceReceived === 0 || order.advanceReceived < paymentData.amount) {
+            totalPaid = (order.advanceReceived || 0) + paymentData.amount;
+          } else if (paymentData.notes && !paymentData.notes.includes('Advance payment')) {
+            totalPaid = (order.advanceReceived || 0) + paymentData.amount;
+          }
+          const balance = Math.max(0, order.totalValue - totalPaid);
+          const paymentStatus = balance <= 0 ? 'Paid' : totalPaid > 0 ? 'Partially Paid' : 'Pending';
+          return {
+            ...order,
+            advanceReceived: totalPaid,
+            balanceAmount: balance,
+            paymentStatus,
+          };
+        })
+      );
     }
 
     return newPayment;
