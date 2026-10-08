@@ -17,6 +17,7 @@ import {
   Settings,
   FolderOpen,
   Plus,
+  FileCheck,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,12 +26,13 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
-  const { activeTab, setActiveTab, leads, followUps, orders, setQuickAction } = useCrm();
+  const { activeTab, setActiveTab, leads, followUps, orders, invoices, setQuickAction } = useCrm();
 
   // Badges count
   const newLeadsCount = leads.filter((l) => l.status === 'New').length;
   const overdueFollowUps = followUps.filter((f) => f.status === 'Pending' && new Date(f.scheduledDate) <= new Date()).length;
   const activeOrdersCount = orders.filter((o) => !['Completed', 'Delivered', 'Cancelled'].includes(o.orderStatus)).length;
+  const pendingInvoicesCount = invoices.filter((i) => i.balanceDue > 0).length;
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -39,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     { id: 'products', label: 'Products', icon: Package },
     { id: 'quotations', label: 'Quotations', icon: FileText },
     { id: 'orders', label: 'Orders', icon: ShoppingBag, badge: activeOrdersCount > 0 ? activeOrdersCount : undefined },
+    { id: 'invoices', label: 'Invoices', icon: FileCheck, badge: pendingInvoicesCount > 0 ? pendingInvoicesCount : undefined, badgeColor: 'bg-amber-600' },
     { id: 'production', label: 'Production', icon: Hammer },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
     { id: 'payments', label: 'Payments', icon: CreditCard },

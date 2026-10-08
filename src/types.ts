@@ -295,6 +295,16 @@ export interface Payment {
   notes?: string;
 }
 
+export interface InvoiceItem {
+  productId?: string;
+  productName: string;
+  sku?: string;
+  quantity: number;
+  unitPrice: number;
+  customizationDetails?: string;
+  total: number;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -302,10 +312,15 @@ export interface Invoice {
   orderNumber: string;
   customerId: string;
   customerName: string;
+  customerMobile?: string;
+  customerEmail?: string;
   customerGstin?: string;
   billingAddress: string;
   invoiceDate: string;
   dueDate: string;
+  items?: InvoiceItem[];
+  gstRatePercent?: number;
+  gstType?: 'CGST_SGST' | 'IGST' | 'NONE';
   subtotal: number;
   cgst: number;
   sgst: number;
@@ -314,6 +329,8 @@ export interface Invoice {
   amountPaid: number;
   balanceDue: number;
   status: 'Draft' | 'Issued' | 'Paid' | 'Partially Paid' | 'Cancelled';
+  notes?: string;
+  termsAndConditions?: string;
 }
 
 export interface DispatchRecord {
@@ -366,6 +383,7 @@ export interface CompanySettings {
   state: string;
   pincode: string;
   gstin: string;
+  panNumber?: string;
   bankName: string;
   bankAccount: string;
   bankIfsc: string;

@@ -1,13 +1,28 @@
 import React, { useState } from 'react';
 import { useCrm } from '../context/CrmContext.tsx';
-import { Payment } from '../types.ts';
+import { Invoice, Payment } from '../types.ts';
 import { formatCurrency } from '../utils/calculations.ts';
-import { CreditCard, Plus, Search, DollarSign, Clock, CheckCircle2, FileText, ArrowRight } from 'lucide-react';
+import { InvoicePdfModal } from './InvoicePdfModal.tsx';
+import { CreateInvoiceModal } from './CreateInvoiceModal.tsx';
+import {
+  CreditCard,
+  Plus,
+  Search,
+  DollarSign,
+  Clock,
+  CheckCircle2,
+  FileText,
+  ArrowRight,
+  Eye,
+  Share2,
+} from 'lucide-react';
 
 export const PaymentsView: React.FC = () => {
-  const { payments, orders, invoices, setQuickAction } = useCrm();
+  const { payments, orders, invoices, setQuickAction, setActiveTab } = useCrm();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabSub, setActiveTabSub] = useState<'payments' | 'invoices'>('payments');
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false);
 
   const totalCollected = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
   const totalOutstanding = orders.reduce((acc, o) => acc + (o.balanceAmount || 0), 0);
@@ -187,13 +202,19 @@ export const PaymentsView: React.FC = () => {
                   <th className="py-3 px-4">GST (CGST/SGST/IGST)</th>
                   <th className="py-3 px-4 text-right">Invoice Total</th>
                   <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {filteredInvoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-stone-50/80 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-stone-900">
-                      {inv.invoiceNumber}
+                      <button
+                        onClick={() => setSelectedInvoice(inv)}
+                        className="text-amber-900 hover:text-amber-700 hover:underline cursor-pointer block text-left"
+                      >
+                        {inv.invoiceNumber}
+                      </button>
                       <div className="text-[10px] text-stone-400 font-normal mt-0.5">Date: {inv.invoiceDate}</div>
                     </td>
                     <td className="py-3 px-4">
@@ -222,12 +243,32 @@ export const PaymentsView: React.FC = () => {
                         {inv.status}
                       </span>
                     </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setSelectedInvoice(inv)}
+                          className="p-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-md cursor-pointer"
+                          title="View & Share Invoice"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab('invoices');
+                          }}
+                          className="p-1.5 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-md cursor-pointer"
+                          title="Open Full Invoices Module"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
 
                 {filteredInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-stone-500">
+                    <td colSpan={8} className="py-10 text-center text-stone-500">
                       No invoices found.
                     </td>
                   </tr>
@@ -236,6 +277,15 @@ export const PaymentsView: React.FC = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Modals */}
+      {selectedInvoice && (
+        <InvoicePdfModal invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+      )}
+
+      {showCreateInvoice && (
+        <CreateInvoiceModal onClose={() => setShowCreateInvoice(false)} />
       )}
     </div>
   );

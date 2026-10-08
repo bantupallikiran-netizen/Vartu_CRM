@@ -24,6 +24,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
         return 'Quotations & Estimates';
       case 'orders':
         return 'Order Management & Customizations';
+      case 'invoices':
+        return 'Tax Invoices & Client Billing';
       case 'production':
         return 'Production Tracking & QC';
       case 'inventory':

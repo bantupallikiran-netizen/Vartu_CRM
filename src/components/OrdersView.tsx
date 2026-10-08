@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useCrm } from '../context/CrmContext.tsx';
-import { Order, OrderStatus, OrderType } from '../types.ts';
+import { Invoice, Order, OrderStatus, OrderType } from '../types.ts';
 import { formatCurrency } from '../utils/calculations.ts';
+import { InvoicePdfModal } from './InvoicePdfModal.tsx';
 import {
   ShoppingBag,
   Search,
@@ -15,15 +16,17 @@ import {
   Eye,
   X,
   FileCheck,
+  FileText,
 } from 'lucide-react';
 
 export const OrdersView: React.FC = () => {
-  const { orders, updateOrderStatus, updateOrder, setQuickAction, setActiveTab } = useCrm();
+  const { orders, updateOrderStatus, updateOrder, setQuickAction, setActiveTab, invoices, generateInvoiceForOrder } = useCrm();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [invoiceToView, setInvoiceToView] = useState<Invoice | null>(null);
 
   const orderTypes: OrderType[] = ['Retail', 'Customized', 'Bulk', 'Corporate', 'Wholesale'];
 
@@ -327,16 +330,35 @@ export const OrdersView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const inv =
+                    invoices.find((i) => i.orderId === selectedOrder.id) ||
+                    generateInvoiceForOrder(selectedOrder.id);
+                  setInvoiceToView(inv);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-amber-700" />
+                <span>Tax Invoice (View & Share)</span>
+              </button>
+
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="px-4 py-2 text-xs font-medium text-stone-600 hover:bg-stone-100 rounded-lg"
+                className="px-4 py-2 text-xs font-medium text-stone-600 hover:bg-stone-100 rounded-lg cursor-pointer"
               >
                 Close
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Invoice Viewer Modal */}
+      {invoiceToView && (
+        <InvoicePdfModal invoice={invoiceToView} onClose={() => setInvoiceToView(null)} />
       )}
     </div>
   );

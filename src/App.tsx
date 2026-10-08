@@ -11,6 +11,7 @@ import { OrdersView } from './components/OrdersView.tsx';
 import { ProductionView } from './components/ProductionView.tsx';
 import { InventoryView } from './components/InventoryView.tsx';
 import { PaymentsView } from './components/PaymentsView.tsx';
+import { InvoicesView } from './components/InvoicesView.tsx';
 import { DispatchView } from './components/DispatchView.tsx';
 import { FollowUpsView } from './components/FollowUpsView.tsx';
 import { ReportsView } from './components/ReportsView.tsx';
@@ -37,6 +38,8 @@ const MainAppContent: React.FC = () => {
         return <QuotationsView />;
       case 'orders':
         return <OrdersView />;
+      case 'invoices':
+        return <InvoicesView />;
       case 'production':
         return <ProductionView />;
       case 'inventory':

@@ -72,6 +72,9 @@ interface CrmContextType {
 
   invoices: Invoice[];
   addInvoice: (invoice: Omit<Invoice, 'id' | 'invoiceNumber'>) => Invoice;
+  updateInvoice: (id: string, updates: Partial<Invoice>) => void;
+  deleteInvoice: (id: string) => void;
+  generateInvoiceForOrder: (orderId: string) => Invoice;
 
   dispatches: DispatchRecord[];
   updateDispatch: (id: string, updates: Partial<DispatchRecord>) => void;
@@ -552,17 +555,162 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     }
 
+    // Auto-update linked invoice(s): recalculate amountPaid, balanceDue, and status in real-time
+    if (paymentData.orderId || paymentData.orderNumber || (paymentData as any).invoiceId) {
+      setInvoices((prevInvoices) =>
+        prevInvoices.map((inv) => {
+          const isMatch =
+            (paymentData.orderId && inv.orderId === paymentData.orderId) ||
+            (paymentData.orderNumber && inv.orderNumber === paymentData.orderNumber) ||
+            ((paymentData as any).invoiceId && inv.id === (paymentData as any).invoiceId);
+
+          if (!isMatch) return inv;
+
+          let newPaid = (inv.amountPaid || 0) + paymentData.amount;
+          if (
+            paymentData.notes &&
+            paymentData.notes.includes('Advance payment') &&
+            inv.amountPaid === paymentData.amount
+          ) {
+            newPaid = inv.amountPaid;
+          }
+          const newBalance = Math.max(0, inv.grandTotal - newPaid);
+          const newStatus =
+            newBalance <= 0
+              ? 'Paid'
+              : newPaid > 0
+              ? 'Partially Paid'
+              : inv.status;
+
+          return {
+            ...inv,
+            amountPaid: newPaid,
+            balanceDue: newBalance,
+            status: newStatus,
+          };
+        })
+      );
+    }
+
     return newPayment;
   };
 
   const addInvoice = (invoiceData: Omit<Invoice, 'id' | 'invoiceNumber'>) => {
     const nextSeq = invoices.length + 1;
-    const invoiceNumber = `${settings.invoicePrefix}${String(nextSeq).padStart(4, '0')}`;
+    const prefix = settings.invoicePrefix || 'VC-INV-2026-';
+    const invoiceNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
     const newInvoice: Invoice = {
       ...invoiceData,
-      id: `invc-${Date.now()}`,
+      id: `invc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       invoiceNumber,
     };
+    setInvoices((prev) => [newInvoice, ...prev]);
+    return newInvoice;
+  };
+
+  const updateInvoice = (id: string, updates: Partial<Invoice>) => {
+    setInvoices((prev) =>
+      prev.map((inv) => {
+        if (inv.id !== id) return inv;
+        const updated = { ...inv, ...updates };
+        if (updates.amountPaid !== undefined || updates.grandTotal !== undefined) {
+          const paid = updates.amountPaid ?? updated.amountPaid;
+          const total = updates.grandTotal ?? updated.grandTotal;
+          updated.balanceDue = Math.max(0, total - paid);
+          if (updated.balanceDue <= 0) {
+            updated.status = 'Paid';
+          } else if (paid > 0) {
+            updated.status = 'Partially Paid';
+          }
+        }
+        return updated;
+      })
+    );
+  };
+
+  const deleteInvoice = (id: string) => {
+    setInvoices((prev) => prev.filter((inv) => inv.id !== id));
+  };
+
+  const generateInvoiceForOrder = (orderId: string): Invoice => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) {
+      throw new Error(`Order not found with ID: ${orderId}`);
+    }
+
+    // Check if an invoice already exists for this order
+    const existing = invoices.find((inv) => inv.orderId === orderId);
+    if (existing) {
+      return existing;
+    }
+
+    const nextSeq = invoices.length + 1;
+    const prefix = settings.invoicePrefix || 'VC-INV-2026-';
+    const invoiceNumber = `${prefix}${String(nextSeq).padStart(4, '0')}`;
+
+    // Calculate existing payments for this order
+    const orderPayments = payments.filter((p) => p.orderId === order.id && p.status === 'Completed');
+    const recordedPaid = orderPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const amountPaid = Math.max(order.advanceReceived || 0, recordedPaid);
+
+    const subtotal = order.totalValue || 0;
+    // GST computation: 18% (intrastate: 9% CGST + 9% SGST, interstate: 18% IGST)
+    const gstRate = settings.defaultGstRate || 18;
+    const isInterState =
+      Boolean(order.customerAddress) &&
+      !order.customerAddress.toLowerCase().includes('telangana') &&
+      !order.customerAddress.toLowerCase().includes('hyderabad');
+
+    const cgst = isInterState ? 0 : Math.round((subtotal * (gstRate / 2)) / 100);
+    const sgst = isInterState ? 0 : Math.round((subtotal * (gstRate / 2)) / 100);
+    const igst = isInterState ? Math.round((subtotal * gstRate) / 100) : 0;
+    const grandTotal = subtotal + cgst + sgst + igst;
+    const balanceDue = Math.max(0, grandTotal - amountPaid);
+    const status: Invoice['status'] =
+      balanceDue <= 0 ? 'Paid' : amountPaid > 0 ? 'Partially Paid' : 'Issued';
+
+    const cust = customers.find((c) => c.id === order.customerId);
+
+    const newInvoice: Invoice = {
+      id: `invc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      invoiceNumber,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      customerId: order.customerId,
+      customerName: order.customerName,
+      customerMobile: order.customerMobile,
+      customerEmail: order.customerEmail || cust?.email,
+      customerGstin: cust?.gstin,
+      billingAddress: order.customerAddress,
+      invoiceDate: new Date().toISOString().split('T')[0],
+      dueDate:
+        order.requiredDeliveryDate ||
+        new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      items: order.items.map((it) => ({
+        productId: it.productId,
+        productName: it.productName,
+        sku: it.sku,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        customizationDetails:
+          it.customizationDetails?.nameText || it.customizationDetails?.specialInstructions,
+        total: it.total,
+      })),
+      gstRatePercent: gstRate,
+      gstType: isInterState ? 'IGST' : 'CGST_SGST',
+      subtotal,
+      cgst,
+      sgst,
+      igst,
+      grandTotal,
+      amountPaid,
+      balanceDue,
+      status,
+      notes: `Tax invoice for order ${order.orderNumber}. Handcrafted with precision by Vartu Creations.`,
+      termsAndConditions:
+        '1. Handcrafted items are uniquely produced to order.\n2. Balance must be cleared prior to delivery/dispatch.\n3. Make UPI payments to vartucreations@okhdfcbank.',
+    };
+
     setInvoices((prev) => [newInvoice, ...prev]);
     return newInvoice;
   };
@@ -622,6 +770,9 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPayment,
         invoices,
         addInvoice,
+        updateInvoice,
+        deleteInvoice,
+        generateInvoiceForOrder,
         dispatches,
         updateDispatch,
         followUps,
